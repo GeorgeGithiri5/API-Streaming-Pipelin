@@ -22,4 +22,35 @@ def create_sparksession():
         .enableHiveSupport().getOrCreate()
         
 def main():
+    logging.debug("\n\nSetting up Spark Session...")
+    spark = create_sparksession()
+    grt = GoodreadsTransform(spark)
+    
+    # Modules in the project
+    modules = {
+        "author.csv": grt.transform_author_dataset,
+        "book.csv": grt.transform_books_dataset,
+        "reviews.csv": grt.transform_reviews_dataset,
+        "user.csv": grt.transform_users_dataset
+    }
+    
+    logging.debug("\n\nCopying data from s3 landing zone to ...")
+    gds3 = GoodReadsS3Module()
+    gds3.s3_move_data(source_bucket = config.get('BUCKET', 'LANDING_ZONE'), target_bucket = config.get('BUCKET', 'WORKING_ZONE'))
+    
+    files_in_working_zone = gds3.get_files(config.get('BUCKET', 'WORKING_ZONE'))
+    
+    # Cleanup proceed zone if files available in working zone
+    
+    if len([set(modules.keys()) & set(files_in_working_zone)]) > 0:
+        logging.info("Cleaning up processed zone.")
+        gds3.clean_bucket(config.get('BUCKET', 'PROCESSED_ZONE'))
+        
+    for file in files_in_working_zone:
+        if file in modules.keys():
+            modules[file]()
+            
+    logging.debug("Waiting before setting up warehouse")
+    time.sleep(5)
+    
     
